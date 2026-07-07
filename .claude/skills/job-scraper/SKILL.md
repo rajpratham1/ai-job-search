@@ -3,7 +3,7 @@ name: job-scraper
 description: >
   Scrapes Danish job sites for new positions matching your profile. Deduplicates across runs.
   Triggers on: job scrape, find jobs, search jobs, new jobs, job search, scrape jobs, /scrape
-allowed-tools: Read, Write, Edit, Glob, Grep, WebFetch, WebSearch, Agent, AskUserQuestion
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent, AskUserQuestion
 ---
 
 # Job Scraper
@@ -38,14 +38,81 @@ Optional arguments:
 
 ### Step 1: Search
 
-Run **WebSearch** queries from `search-queries.md`. By default, run the top 3 priority categories. If the user said "broad", run all categories.
+Read `search-queries.md` (this directory) for the search strategy. By default, run the top 3 priority query categories. If the user said "broad", run all categories. If the user specified a focus area (e.g. "data science"), prioritize queries from that category.
 
-If the user specified a focus area (e.g. "data science"), prioritize queries from that category.
+**Use the installed CLI tools as the primary search mechanism.** Fall back to `WebSearch` only for portals that do not have a CLI skill, or if `bun` is unavailable on the system.
 
-For each search:
-- Use `WebSearch` with site-specific queries (jobindex.dk, linkedin.com/jobs, karriere.dk, etc.)
-- Target your configured geographic area
-- Look for postings from the last 14 days
+#### 1a. Check bun availability
+
+```bash
+bun --version
+```
+
+If this fails (bun not installed), skip to **1c (WebSearch fallback)** for all portals and note the fallback in the Step 5 output.
+
+#### 1b. Run CLI tools (primary — run these in parallel where possible)
+
+For each query keyword/title extracted from `search-queries.md`, run the relevant CLI tools. Use `--jobage 14` on all calls to restrict to the last 14 days. Use `--limit 20` to cap output per call.
+
+**Jobindex** (Danish — largest board):
+```bash
+bun run .agents/skills/jobindex-search/cli/src/cli.ts search \
+  --query "<QUERY_TERM> <CITY_IF_APPLICABLE>" \
+  --jobage 14 \
+  --sort date \
+  --limit 20 \
+  --format json
+```
+
+**Akademikernes Jobbank** (Danish — academic/professional roles):
+```bash
+bun run .agents/skills/jobbank-search/cli/src/cli.ts search \
+  --query "<QUERY_TERM>" \
+  --jobage 14 \
+  --limit 20 \
+  --format json
+```
+
+**Jobdanmark** (Danish — broad coverage):
+```bash
+bun run .agents/skills/jobdanmark-search/cli/src/cli.ts search \
+  --query "<QUERY_TERM>" \
+  --jobage 14 \
+  --limit 20 \
+  --format json
+```
+
+**Jobnet** (Danish — government portal):
+```bash
+bun run .agents/skills/jobnet-search/cli/src/cli.ts search \
+  --query "<QUERY_TERM>" \
+  --jobage 14 \
+  --limit 20 \
+  --format json
+```
+
+**LinkedIn** (country-agnostic — use for broader reach):
+```bash
+bun run .agents/skills/linkedin-search/cli/src/cli.ts search \
+  --query "<QUERY_TERM>" \
+  --location "<CITY_FROM_SEARCH_QUERIES>, <COUNTRY>" \
+  --jobage 14 \
+  --limit 20 \
+  --format json
+```
+
+Each CLI outputs `{ "meta": { "count": N, "page": 1 }, "results": [...] }` where each result has `id`, `title`, `company`, `location`, `date`, `url`. Collect all results across all CLI calls.
+
+If a CLI tool exits with a non-zero code or returns no results for a query, log the failure and continue — do not abort the whole search.
+
+#### 1c. WebSearch fallback
+
+For any portal **not** covered by a CLI skill (e.g. karriere.dk, jobfinder.dk, company career pages), or when bun is unavailable, use `WebSearch` with site-specific queries from `search-queries.md`:
+```
+site:karriere.dk "<QUERY_TERM>" <CITY>
+site:jobfinder.dk "<QUERY_TERM>" <CITY>
+```
+Also use WebSearch for any custom portal queries in `search-queries.md` that reference sites without a CLI skill.
 
 ### Step 2: Fetch & Parse
 
