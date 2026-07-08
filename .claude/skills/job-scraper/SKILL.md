@@ -52,67 +52,28 @@ If this fails (bun not installed), skip to **1c (WebSearch fallback)** for all p
 
 #### 1b. Run CLI tools (primary — run these in parallel where possible)
 
-For each query keyword/title extracted from `search-queries.md`, run the relevant CLI tools. Use `--jobage 14` on all calls to restrict to the last 14 days. Use `--limit 20` to cap output per call.
+Discover all installed portal CLI skills by reading every `SKILL.md` found under `.agents/skills/*/SKILL.md`. Each file documents that portal's exact CLI flags and usage examples. **Use each portal's own documented interface — do not guess flags.** This approach automatically includes any new portals added via `/add-portal` without requiring changes to this file.
 
-**Jobindex** (Danish — largest board):
-```bash
-bun run .agents/skills/jobindex-search/cli/src/cli.ts search \
-  --query "<QUERY_TERM> <CITY_IF_APPLICABLE>" \
-  --jobage 14 \
-  --sort date \
-  --limit 20 \
-  --format json
-```
+For each installed portal skill:
 
-**Akademikernes Jobbank** (Danish — academic/professional roles):
-```bash
-bun run .agents/skills/jobbank-search/cli/src/cli.ts search \
-  --query "<QUERY_TERM>" \
-  --jobage 14 \
-  --limit 20 \
-  --format json
-```
+1. Read its `SKILL.md` to find the correct `bun run …` invocation and supported flags.
+2. Translate the query terms from `search-queries.md` into that portal's flag format (e.g. `--key`, `--search-string`, `--query`, filter codes — whatever the portal's SKILL.md specifies).
+3. Scope to the last 14 days using the portal's supported recency flag (`--jobage`, `--since <YYYY-MM-DD>`, `--order PublicationDate`, etc. — as documented per portal).
+4. Cap results to ~20 per call using the portal's limit flag.
+5. Use `--format json` for machine-readable output.
 
-**Jobdanmark** (Danish — broad coverage):
-```bash
-bun run .agents/skills/jobdanmark-search/cli/src/cli.ts search \
-  --query "<QUERY_TERM>" \
-  --jobage 14 \
-  --limit 20 \
-  --format json
-```
+Run all portal CLI calls in parallel where possible using the Agent tool. Collect all `results` arrays into a single pool for Step 2.
 
-**Jobnet** (Danish — government portal):
-```bash
-bun run .agents/skills/jobnet-search/cli/src/cli.ts search \
-  --query "<QUERY_TERM>" \
-  --jobage 14 \
-  --limit 20 \
-  --format json
-```
-
-**LinkedIn** (country-agnostic — use for broader reach):
-```bash
-bun run .agents/skills/linkedin-search/cli/src/cli.ts search \
-  --query "<QUERY_TERM>" \
-  --location "<CITY_FROM_SEARCH_QUERIES>, <COUNTRY>" \
-  --jobage 14 \
-  --limit 20 \
-  --format json
-```
-
-Each CLI outputs `{ "meta": { "count": N, "page": 1 }, "results": [...] }` where each result has `id`, `title`, `company`, `location`, `date`, `url`. Collect all results across all CLI calls.
-
-If a CLI tool exits with a non-zero code or returns no results for a query, log the failure and continue — do not abort the whole search.
+If a CLI tool exits with a non-zero code, log the error message and continue — do not abort the whole search.
 
 #### 1c. WebSearch fallback
 
-For any portal **not** covered by a CLI skill (e.g. karriere.dk, jobfinder.dk, company career pages), or when bun is unavailable, use `WebSearch` with site-specific queries from `search-queries.md`:
-```
-site:karriere.dk "<QUERY_TERM>" <CITY>
-site:jobfinder.dk "<QUERY_TERM>" <CITY>
-```
-Also use WebSearch for any custom portal queries in `search-queries.md` that reference sites without a CLI skill.
+Use `WebSearch` for:
+- Portals listed in `search-queries.md` that do **not** have a corresponding directory under `.agents/skills/`
+- Any portal whose CLI fails at runtime
+- When bun is unavailable (Step 1a failed)
+
+Use the site-specific query strings from `search-queries.md` directly as WebSearch queries for these portals.
 
 ### Step 2: Fetch & Parse
 
